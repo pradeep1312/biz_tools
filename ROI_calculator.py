@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from num2words import num2words
 
+# Page config
 st.set_page_config(page_title="Working Capital Cycle ROI Calculator", layout="wide")
 
 # ---------- Helpers ----------
@@ -15,13 +16,25 @@ def in_words(amount: float) -> str:
     except Exception:
         return ""
 
-def sidebar_hint(text: str):
-    """Light, subtle hint text under inputs in sidebar."""
-    if text:
-        st.sidebar.markdown(
-            f"<span style='font-size:11px; color:#888; font-style:italic;'>({text})</span>",
-            unsafe_allow_html=True,
-        )
+def hint_md(text: str):
+    """Return styled markdown for light, small hint."""
+    if not text:
+        return ""
+    return f"<div style='font-size:11px;color:#777;font-style:italic;margin-top:4px;'>({text})</div>"
+
+def sidebar_hint(value):
+    """Show the hint in the sidebar under an input."""
+    txt = in_words(value) if value is not None else ""
+    st.sidebar.markdown(hint_md(txt), unsafe_allow_html=True)
+
+def format_inr(x):
+    """Format number in Indian style with rupee sign, no decimals if whole number."""
+    try:
+        if abs(round(x) - x) < 0.005:
+            return f"₹{int(round(x)):,.0f}"
+        return f"₹{x:,.2f}"
+    except Exception:
+        return str(x)
 
 def compute_emi_schedule_year(loan_amount: float,
                               annual_rate: float,
@@ -70,23 +83,17 @@ def compute_emi_schedule_year(loan_amount: float,
     return emi, total_interest_year, total_principal_year, outstanding
 
 # ---------- Title & Description ----------
-
 st.title("Working Capital Cycle ROI Calculator")
+st.markdown(
+    "Simulates **working capital cycles with compounding**, including margin conversion, per-cycle fixed costs, annual fixed costs, loan (interest-only or EMI), and tax at year end."
+)
+st.markdown("---")
 
-st.markdown("""
-This tool simulates **working capital cycles with compounding**, including:
-
-- Margin on revenue (converted to profit on cost)
-- Fixed operating cost per cycle
-- Annual fixed costs (salaries, rent, SG&A)
-- Loan: **interest-only (CC/OD)** _or_ **EMI monthly (term loan)**
-- Tax applied **once at year end** on cumulative profit
-""")
-
-# ---------- Inputs (Sidebar) ----------
-
+# ---------- Sidebar Inputs (grouped) ----------
 st.sidebar.header("Inputs")
 
+# Group 1: Capital & Cycle
+st.sidebar.subheader("Capital & Cycle")
 starting_capital = st.sidebar.number_input(
     "Starting Capital (your own capital)",
     min_value=0.0,
@@ -94,21 +101,16 @@ starting_capital = st.sidebar.number_input(
     step=50_000.0,
     format="%.2f",
 )
-sidebar_hint(in_words(starting_capital))
+sidebar_hint(starting_capital)
 
 cycle_days = st.sidebar.number_input(
-    "Cash Conversion Cycle (days)",
-    min_value=1,
-    value=45,
-    step=1,
+    "Cash Conversion Cycle (days)", min_value=1, value=45, step=1
 )
 
+# Group 2: Margins & Costs
+st.sidebar.subheader("Margins & Costs")
 margin_pct = st.sidebar.number_input(
-    "Gross Margin on Sales (%)",
-    min_value=0.0,
-    max_value=100.0,
-    value=15.0,
-    step=0.5,
+    "Gross Margin on Sales (%)", min_value=0.0, max_value=100.0, value=15.0, step=0.5
 )
 margin = margin_pct / 100.0  # on revenue
 
@@ -119,7 +121,7 @@ fixed_cost_cycle = st.sidebar.number_input(
     step=5_000.0,
     format="%.2f",
 )
-sidebar_hint(in_words(fixed_cost_cycle))
+sidebar_hint(fixed_cost_cycle)
 
 annual_fixed_cost = st.sidebar.number_input(
     "Annual Fixed Costs (Salaries, Rent, SG&A)",
@@ -128,8 +130,10 @@ annual_fixed_cost = st.sidebar.number_input(
     step=10_000.0,
     format="%.2f",
 )
-sidebar_hint(in_words(annual_fixed_cost))
+sidebar_hint(annual_fixed_cost)
 
+# Group 3: Loan
+st.sidebar.subheader("Loan")
 loan_amount = st.sidebar.number_input(
     "Loan Amount",
     min_value=0.0,
@@ -137,7 +141,7 @@ loan_amount = st.sidebar.number_input(
     step=50_000.0,
     format="%.2f",
 )
-sidebar_hint(in_words(loan_amount))
+sidebar_hint(loan_amount)
 
 loan_interest_pct = st.sidebar.number_input(
     "Loan Interest Rate per Year (%)",
@@ -149,57 +153,43 @@ loan_interest_pct = st.sidebar.number_input(
 loan_interest_rate = loan_interest_pct / 100.0
 
 loan_type = st.sidebar.radio(
-    "Loan Type",
-    ["Interest-only (CC/OD style)", "EMI Monthly (Term Loan)"],
+    "Loan Type", ["Interest-only (CC/OD style)", "EMI Monthly (Term Loan)"]
 )
 
 loan_tenure_months = 0
 if loan_type == "EMI Monthly (Term Loan)":
     loan_tenure_months = st.sidebar.number_input(
-        "Loan Tenure (months)",
-        min_value=1,
-        value=36,
-        step=1,
+        "Loan Tenure (months)", min_value=1, value=36, step=1
     )
 
+# Group 4: Tax & Options
+st.sidebar.subheader("Tax & Options")
 tax_rate_pct = st.sidebar.number_input(
-    "Tax Rate on Annual Profit (%)",
-    min_value=0.0,
-    max_value=100.0,
-    value=30.0,
-    step=1.0,
+    "Tax Rate on Annual Profit (%)", min_value=0.0, max_value=100.0, value=30.0, step=1.0
 )
 tax_rate = tax_rate_pct / 100.0
 
-round_cycles = st.sidebar.checkbox(
-    "Floor number of cycles (ignore partial last cycle)",
-    value=True,
-)
+round_cycles = st.sidebar.checkbox("Floor number of cycles (ignore partial last cycle)", value=True)
 
 # ---------- Basic Checks ----------
-
 if cycle_days <= 0:
     st.error("Cash Conversion Cycle (days) must be > 0.")
     st.stop()
 
-# ---------- Core Calculations ----------
-
+# ---------- Core Calculations (identical logic) ----------
 raw_cycles = 365 / cycle_days
 cycles = math.floor(raw_cycles) if round_cycles else raw_cycles
 
 if cycles <= 0:
-    st.warning("Number of cycles per year is 0. Increase the year length or decrease cycle_days.")
+    st.warning("Number of cycles per year is 0. Increase cycle_days or adjust settings.")
     st.stop()
 
-# Annual fixed allocated per cycle
 annual_fixed_per_cycle = annual_fixed_cost / cycles if cycles > 0 else 0.0
 
-# Margin on revenue → markup on cost
-# markup% = margin / (1 - margin)
+# Convert margin on sales -> markup on cost
 markup = margin / (1 - margin) if 0 <= margin < 1 else 0.0
 
-# ----- Loan behaviour -----
-
+# Loan behavior calculations
 emi_monthly = 0.0
 annual_loan_interest = 0.0
 annual_principal_repayment = 0.0
@@ -207,13 +197,11 @@ loan_outstanding_end_year = loan_amount
 
 if loan_amount > 0 and loan_interest_rate >= 0:
     if loan_type == "Interest-only (CC/OD style)":
-        # Simple: pay only interest, no principal
         annual_loan_interest = loan_amount * loan_interest_rate
         annual_principal_repayment = 0.0
         emi_monthly = 0.0
         loan_outstanding_end_year = loan_amount
     else:
-        # EMI Monthly (Term Loan)
         emi_monthly, total_int_year, total_prin_year, outstanding_after_year = \
             compute_emi_schedule_year(
                 loan_amount=loan_amount,
@@ -227,13 +215,11 @@ if loan_amount > 0 and loan_interest_rate >= 0:
 loan_interest_per_cycle = annual_loan_interest / cycles if cycles > 0 else 0.0
 loan_principal_per_cycle = annual_principal_repayment / cycles if cycles > 0 else 0.0
 
-# ----- Simulate cycles with compounding -----
-
+# Simulate cycles with compounding
 capital = starting_capital
 rows = []
 
 for cycle in range(1, int(math.ceil(cycles)) + 1):
-    # handle partial last cycle if not flooring
     cycle_fraction = 1.0
     if not round_cycles and cycle == math.ceil(cycles):
         cycle_fraction = cycles - math.floor(cycles)
@@ -285,47 +271,46 @@ ending_capital_after_tax = starting_capital + net_income
 
 roi_pct = (net_income / starting_capital * 100.0) if starting_capital > 0 else 0.0
 
-# ---------- Output KPIs ----------
+# ---------- Output area with Tabs ----------
+tab1, tab2, tab3, tab4 = st.tabs(["Summary", "Loan Summary", "Cycle Breakdown", "Growth Chart"])
 
-col1, col2, col3, col4 = st.columns(4)
+with tab1:
+    st.subheader("Summary")
+    k1, k2, k3, k4 = st.columns([1.2,1,1,1])
+    k1.metric("Cycles / Year", f"{raw_cycles:.2f}")
+    k2.metric("Simulated Cycles", f"{cycles:.2f}")
+    k3.metric("Ending Capital (After Tax)", format_inr(ending_capital_after_tax))
+    k4.metric("Annual ROI (After Tax)", f"{roi_pct:.2f}%")
 
-with col1:
-    st.metric("Cycles per Year", f"{raw_cycles:.2f}")
+    st.markdown("")
+    c1, c2 = st.columns([2,1])
+    with c1:
+        st.write("**Annual Net Income (After Tax):**", format_inr(net_income))
+        st.caption(in_words(net_income))
+        st.write("**Cumulative Profit (Before Tax):**", format_inr(cumulative_profit))
+    with c2:
+        st.write("**Starting Capital:**")
+        st.write(format_inr(starting_capital))
+        st.caption(in_words(starting_capital))
 
-with col2:
-    st.metric("Simulated Cycles", f"{cycles:.2f}")
+with tab2:
+    st.subheader("Loan Summary (1 Year View)")
+    st.write(f"**Loan Type:** {loan_type}")
+    st.write(f"**Loan Amount:** {format_inr(loan_amount)}", " — ", in_words(loan_amount))
+    st.write(f"**Annual Interest Paid:** {format_inr(annual_loan_interest)}")
+    st.write(f"**Annual Principal Repaid:** {format_inr(annual_principal_repayment)}")
+    st.write(f"**Loan Outstanding After 1 Year:** {format_inr(loan_outstanding_end_year)}")
+    if loan_type == "EMI Monthly (Term Loan)" and emi_monthly > 0:
+        st.write(f"Approx. EMI per month: **{format_inr(emi_monthly)}**")
 
-with col3:
-    st.metric("Ending Capital (After Tax)", f"₹{ending_capital_after_tax:,.2f}")
+with tab3:
+    st.subheader("Per-Cycle Breakdown")
+    st.dataframe(df, use_container_width=True)
 
-with col4:
-    st.metric("Annual ROI (After Tax)", f"{roi_pct:.2f}%")
+with tab4:
+    st.subheader("Capital Growth Over Cycles")
+    st.line_chart(df.set_index("Cycle")["Ending Capital"])
 
-st.write(f"Ending Capital in words: **{in_words(ending_capital_after_tax)}**")
-st.write(f"Annual Net Income (After Tax): **₹{net_income:,.2f}** ({in_words(net_income)})")
-
-# Loan info
+# Footer spacing
 st.markdown("---")
-st.subheader("Loan Summary (1 Year View)")
-loan_col1, loan_col2, loan_col3 = st.columns(3)
-
-with loan_col1:
-    st.write(f"Annual Interest Paid: **₹{annual_loan_interest:,.2f}**")
-
-with loan_col2:
-    st.write(f"Annual Principal Repaid: **₹{annual_principal_repayment:,.2f}**")
-
-with loan_col3:
-    st.write(f"Loan Outstanding After 1 Year: **₹{loan_outstanding_end_year:,.2f}**")
-
-if loan_type == "EMI Monthly (Term Loan)" and emi_monthly > 0:
-    st.write(f"Approx. EMI per month: **₹{emi_monthly:,.2f}**")
-
-# ---------- Detailed Table & Chart ----------
-
-st.markdown("---")
-st.subheader("Per-Cycle Breakdown")
-st.dataframe(df, use_container_width=True)
-
-st.subheader("Capital Growth Over Cycles")
-st.line_chart(df.set_index("Cycle")["Ending Capital"])
+st.caption("Tip: change inputs on the left — number-in-words hints update automatically.")
