@@ -22,11 +22,6 @@ def hint_md(text: str):
         return ""
     return f"<div style='font-size:11px;color:#777;font-style:italic;margin-top:4px;'>({text})</div>"
 
-def sidebar_hint(value):
-    """Show the hint in the sidebar under an input."""
-    txt = in_words(value) if value is not None else ""
-    st.sidebar.markdown(hint_md(txt), unsafe_allow_html=True)
-
 def format_inr(x):
     """Format number in Indian style with rupee sign, no decimals if whole number."""
     try:
@@ -82,6 +77,26 @@ def compute_emi_schedule_year(loan_amount: float,
 
     return emi, total_interest_year, total_principal_year, outstanding
 
+# ---------- Money input helper (dynamic words while typing) ----------
+def money_input(label: str, default: float = 0.0, key: str | None = None):
+    """
+    Sidebar text input that accepts commas and shows live number-in-words.
+    Returns float value (0.0 if invalid).
+    """
+    # display initial value with commas if user didn't type anything yet
+    initial = f"{int(default):,}" if default is not None else ""
+    txt = st.sidebar.text_input(label, value=initial, key=key)
+    # clean input: remove commas and spaces
+    cleaned = txt.replace(",", "").replace(" ", "")
+    try:
+        val = float(cleaned) if cleaned != "" else 0.0
+    except:
+        val = 0.0
+    # show words hint dynamically
+    words = in_words(val) if val else ""
+    st.sidebar.markdown(hint_md(words), unsafe_allow_html=True)
+    return val
+
 # ---------- Title & Description ----------
 st.title("Working Capital Cycle ROI Calculator")
 st.markdown(
@@ -94,14 +109,7 @@ st.sidebar.header("Inputs")
 
 # Group 1: Capital & Cycle
 st.sidebar.subheader("Capital & Cycle")
-starting_capital = st.sidebar.number_input(
-    "Starting Capital (your own capital)",
-    min_value=0.0,
-    value=1_000_000.0,
-    step=50_000.0,
-    format="%.2f",
-)
-sidebar_hint(starting_capital)
+starting_capital = money_input("Starting Capital (your own capital)", default=1_000_000.0, key="start_cap")
 
 cycle_days = st.sidebar.number_input(
     "Cash Conversion Cycle (days)", min_value=1, value=45, step=1
@@ -114,34 +122,13 @@ margin_pct = st.sidebar.number_input(
 )
 margin = margin_pct / 100.0  # on revenue
 
-fixed_cost_cycle = st.sidebar.number_input(
-    "Fixed Operating Cost per Cycle",
-    min_value=0.0,
-    value=30_000.0,
-    step=5_000.0,
-    format="%.2f",
-)
-sidebar_hint(fixed_cost_cycle)
+fixed_cost_cycle = money_input("Fixed Operating Cost per Cycle", default=30_000.0, key="fixed_cycle")
 
-annual_fixed_cost = st.sidebar.number_input(
-    "Annual Fixed Costs (Salaries, Rent, SG&A)",
-    min_value=0.0,
-    value=600_000.0,
-    step=10_000.0,
-    format="%.2f",
-)
-sidebar_hint(annual_fixed_cost)
+annual_fixed_cost = money_input("Annual Fixed Costs (Salaries, Rent, SG&A)", default=600_000.0, key="annual_fixed")
 
 # Group 3: Loan
 st.sidebar.subheader("Loan")
-loan_amount = st.sidebar.number_input(
-    "Loan Amount",
-    min_value=0.0,
-    value=500_000.0,
-    step=50_000.0,
-    format="%.2f",
-)
-sidebar_hint(loan_amount)
+loan_amount = money_input("Loan Amount", default=500_000.0, key="loan_amt")
 
 loan_interest_pct = st.sidebar.number_input(
     "Loan Interest Rate per Year (%)",
@@ -313,4 +300,4 @@ with tab4:
 
 # Footer spacing
 st.markdown("---")
-st.caption("Tip: change inputs on the left — number-in-words hints update automatically.")
+st.caption("Tip: change inputs on the left — number-in-words hints update instantly as you type.")
