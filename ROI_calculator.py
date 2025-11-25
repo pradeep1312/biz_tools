@@ -2,6 +2,71 @@ import math
 import pandas as pd
 import streamlit as st
 from num2words import num2words
+from authlib.integrations.requests_client import OAuth2Session
+
+# Load secrets
+auth0_domain = st.secrets["auth0_domain"]
+auth0_client_id = st.secrets["auth0_client_id"]
+auth0_client_secret = st.secrets["auth0_client_secret"]
+auth0_redirect_uri = st.secrets["auth0_redirect_uri"]
+
+authorize_url = f"https://{auth0_domain}/authorize"
+token_url = f"https://{auth0_domain}/oauth/token"
+userinfo_url = f"https://{auth0_domain}/userinfo"
+
+def login_button():
+    oauth = OAuth2Session(
+        client_id=auth0_client_id,
+        client_secret=auth0_client_secret,
+        scope="openid profile email",
+        redirect_uri=auth0_redirect_uri,
+    )
+    uri, _ = oauth.create_authorization_url(authorize_url)
+    st.markdown(f"[Login with Google]({uri})")
+
+def handle_callback():
+    if "code" in st.query_params:
+        code = st.query_params["code"]
+        oauth = OAuth2Session(
+            client_id=auth0_client_id,
+            client_secret=auth0_client_secret,
+            scope="openid profile email",
+            redirect_uri=auth0_redirect_uri,
+        )
+        token = oauth.fetch_token(
+            token_url=token_url,
+            code=code,
+            authorization_response=st.request.url,
+        )
+        userinfo = oauth.get(userinfo_url, token=token).json()
+        st.session_state["user"] = userinfo
+        return True
+    return False
+
+
+# ----------- MAIN APP AUTH ----------
+if "user" not in st.session_state:
+    st.title("Login Required")
+    if handle_callback():
+        st.experimental_rerun()
+    login_button()
+    st.stop()
+
+
+# At this point, USER IS LOGGED IN
+userinfo = st.session_state["user"]
+
+st.sidebar.success(f"Welcome {userinfo['name']}")
+st.sidebar.write(userinfo["email"])
+
+if st.sidebar.button("Logout"):
+    st.session_state.clear()
+    st.experimental_rerun()
+
+
+# ------------------ YOUR APP CONTENT ------------------
+st.title("Working Capital ROI Calculator (Logged In)")
+st.write(f"You are logged in as **{userinfo['email']}**")
 
 st.set_page_config(page_title="Working Capital Cycle ROI Calculator", layout="wide")
 
